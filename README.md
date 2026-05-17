@@ -1,8 +1,8 @@
-# Retail Forecast Project
+# Dự án Dự Báo Nhu Cầu Bán Lẻ
 
-This project is a reusable starter for retail demand forecasting and inventory optimization.
+Dự án này là bộ khung tái sử dụng cho bài toán **dự báo nhu cầu bán lẻ** và **tối ưu hóa tồn kho**.
 
-It is designed to handle datasets that look different on the surface, such as:
+Dự án được thiết kế để xử lý nhiều bộ dữ liệu nhìn khác nhau bên ngoài, ví dụ như:
 
 - M5 Forecasting - Accuracy
 - Rossmann Store Sales
@@ -10,61 +10,60 @@ It is designed to handle datasets that look different on the surface, such as:
 - Corporacion Favorita Grocery Sales Forecasting
 - Store Sales - Time Series Forecasting
 
-The trick is to normalize each dataset into a shared internal schema:
+Điểm mấu chốt là chuẩn hóa mọi bộ dữ liệu về một schema chung:
 
 - `date`
 - `store_id`
 - `item_id`
 - `target`
-- optional exogenous fields like `promo`, `holiday`, `price`, `transactions`, `oil`, `cpi`, `unemployment`
+- các trường ngoại sinh tùy chọn như `promo`, `holiday`, `price`, `transactions`, `oil`, `cpi`, `unemployment`
 
-## What is included
+## Có gì trong dự án
 
-- Dataset normalization
-- Built-in adapters for retail datasets like M5, Rossmann, Walmart, Favorita, and Store Sales
-- Time-series feature engineering
-- Baseline regression model
-- Optional Prophet forecasting
-- Optional LSTM forecaster
-- Inventory metrics: safety stock, reorder point, EOQ
-- Power BI/Tableau-ready CSV exports
+- Chuẩn hóa dữ liệu đầu vào
+- Bộ chuyển đổi sẵn cho các dataset bán lẻ như M5, Rossmann, Walmart, Favorita và Store Sales
+- Tạo đặc trưng chuỗi thời gian
+- Mô hình hồi quy baseline
+- Prophet tùy chọn
+- LSTM tùy chọn
+- Các chỉ số tồn kho: safety stock, reorder point, EOQ
+- Xuất CSV sẵn cho Power BI/Tableau
 
-## Install
+## Cài đặt
 
 ```bash
 pip install -e .
 ```
 
-Optional extras:
+Nếu muốn dùng thêm mô hình tùy chọn:
 
 ```bash
 pip install -e ".[prophet]"
 pip install -e ".[lstm]"
 ```
 
-## Train a model
+## Huấn luyện mô hình
 
 ```bash
 retail-forecast train --data path/to/train.csv --dataset auto --output artifacts
 ```
 
-By default the pipeline forecasts the top groups first to keep local runs manageable.
-Use `--max-groups` to raise or lower the number of `store_id + item_id` series processed.
-For a larger run, set `--max-groups` to the number of groups you want to include.
+Mặc định pipeline sẽ dự báo theo từng nhóm quan trọng trước để chạy nhẹ trên máy local.
+Bạn có thể dùng `--max-groups` để tăng hoặc giảm số chuỗi `store_id + item_id` được xử lý.
 
-## Forecast
+## Dự báo
 
 ```bash
 retail-forecast forecast --data path/to/train.csv --dataset auto --horizon 30 --output forecasts.csv
 ```
 
-## Export BI tables
+## Xuất bảng cho Power BI / Tableau
 
 ```bash
 retail-forecast export --data path/to/data_or_folder --dataset auto --output-dir artifacts
 ```
 
-This generates BI-friendly tables:
+Lệnh này sẽ tạo các bảng đầu ra phù hợp để làm dashboard:
 
 - `fact_history.csv`
 - `fact_forecast.csv`
@@ -73,22 +72,22 @@ This generates BI-friendly tables:
 - `inventory_recommendations.csv`
 - `model_metrics.csv`
 
-## Example workflow
+## Quy trình sử dụng mẫu
 
-1. Drop a dataset into `data/raw/`
-2. Run normalization
-3. Train regression / Prophet / LSTM
-4. Generate a forecast
-5. Compute inventory recommendations
-6. Export results to CSV for a dashboard
+1. Đặt dữ liệu vào `data/raw/`
+2. Chuẩn hóa dữ liệu
+3. Huấn luyện regression / Prophet / LSTM
+4. Sinh kết quả dự báo
+5. Tính khuyến nghị tồn kho
+6. Xuất CSV để làm dashboard
 
-## Why this approach works for different datasets
+## Vì sao cách này dùng được cho nhiều bộ dữ liệu
 
-The datasets are not identical, but they all describe retail demand over time. A shared schema lets us build one pipeline that:
+Các bộ dữ liệu không giống hệt nhau, nhưng đều mô tả nhu cầu bán lẻ theo thời gian. Khi chuẩn hóa về cùng schema, ta có thể xây dựng một pipeline chung để:
 
-- maps column names to a standard form
-- detects the time granularity
-- creates lags and rolling statistics
-- trains models on the same target definition
+- ánh xạ tên cột về chuẩn thống nhất
+- nhận biết tần suất thời gian
+- tạo lag và rolling statistics
+- huấn luyện trên cùng định nghĩa target
 
-That means you do not need five separate projects. You need one pipeline with adapters.
+Như vậy, bạn không cần làm 5 dự án riêng. Chỉ cần một pipeline có bộ chuyển đổi phù hợp.
