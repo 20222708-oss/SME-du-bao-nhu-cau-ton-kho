@@ -34,7 +34,7 @@ def make_lag_features(
             g[f"roll_std_{window}"] = shifted.rolling(window=window, min_periods=2).std()
         return g
 
-    out = out.groupby(["store_id", "item_id"], group_keys=False).apply(_per_group)
+    out = out.groupby(["store_id", "item_id"], group_keys=False).apply(_per_group, include_groups=False)
     return out.reset_index(drop=True)
 
 

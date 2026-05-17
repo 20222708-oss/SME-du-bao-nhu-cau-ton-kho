@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from retail_forecast.datasets import aggregate_series, load_dataset, standardize_dataframe
+from retail_forecast.datasets import standardize_dataframe
 from retail_forecast.exporters import build_powerbi_tables
 from retail_forecast.models import train_regression_model
 
@@ -30,18 +30,17 @@ def test_standardize_dataframe():
 
 def test_train_regression_model():
     df = standardize_dataframe(_sample_frame(), profile="rossmann")
-    series = aggregate_series(df)
-    bundle, metrics = train_regression_model(series)
+    bundle, metrics = train_regression_model(df)
     assert bundle.feature_columns
     assert set(metrics) == {"mae", "rmse", "mape"}
 
 
 def test_build_powerbi_tables(tmp_path: Path):
     df = standardize_dataframe(_sample_frame(), profile="rossmann")
-    series = aggregate_series(df)
-    forecast = series[["date", "store_id", "item_id"]].copy()
-    forecast["forecast"] = series["target"].tail(len(forecast)).to_numpy()
-    paths = build_powerbi_tables(series, {"baseline": forecast}, output_dir=tmp_path)
+    forecast = df[["date", "store_id", "item_id"]].head(5).copy()
+    forecast["forecast"] = [101, 102, 103, 104, 105]
+    forecast["model_name"] = "baseline"
+    paths = build_powerbi_tables(df, {"baseline": forecast}, output_dir=tmp_path)
     assert (tmp_path / "fact_history.csv").exists()
     assert (tmp_path / "fact_forecast.csv").exists()
     assert paths["inventory_recommendations"].exists()

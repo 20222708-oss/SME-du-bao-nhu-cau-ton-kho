@@ -28,6 +28,9 @@ CANONICAL_COLUMNS = {
     "weekly_sales": "target",
     "weekly sales": "target",
     "unit_sales": "target",
+    "qty_sold": "target",
+    "quantity_sold": "target",
+    "sold_qty": "target",
     "quantity": "target",
     "y": "target",
     "promo": "promo",
@@ -41,6 +44,64 @@ CANONICAL_COLUMNS = {
     "oil": "oil",
     "cpi": "cpi",
     "unemployment": "unemployment",
+}
+
+ESSENTIAL_COLUMNS = {
+    "date",
+    "ds",
+    "day",
+    "datetime",
+    "store",
+    "store_id",
+    "store_nbr",
+    "item",
+    "item_id",
+    "family",
+    "department",
+    "product",
+    "product_id",
+    "sales",
+    "weekly_sales",
+    "unit_sales",
+    "qty_sold",
+    "quantity_sold",
+    "sold_qty",
+    "quantity",
+    "y",
+    "promo",
+    "promotion",
+    "onpromotion",
+    "isholiday",
+    "holiday",
+    "transactions",
+    "price",
+    "sell_price",
+    "oil",
+    "cpi",
+    "unemployment",
+    "stock_begin",
+    "stock_end",
+    "lead_time_days",
+    "revenue",
+    "discount_pct",
+    "is_weekend",
+    "is_holiday",
+    "holiday_name",
+    "is_tet_season",
+    "day_of_week",
+    "month",
+    "quarter",
+    "year",
+    "product_name",
+    "category",
+    "store_name",
+    "city",
+    "district",
+    "store_type",
+    "stock_begin",
+    "stock_end",
+    "lead_time_days",
+    "target",
 }
 
 
@@ -120,7 +181,10 @@ def standardize_dataframe(df: pd.DataFrame, profile: str | None = None) -> pd.Da
 def load_tabular(path: str | Path, profile: str | None = None) -> pd.DataFrame:
     path = Path(path)
     if path.suffix.lower() in {".csv", ".txt"}:
-        df = pd.read_csv(path)
+        try:
+            df = pd.read_csv(path, low_memory=False, usecols=lambda c: c.lower().strip() in ESSENTIAL_COLUMNS)
+        except ValueError:
+            df = pd.read_csv(path, low_memory=False)
     elif path.suffix.lower() == ".parquet":
         df = pd.read_parquet(path)
     elif path.suffix.lower() in {".xlsx", ".xls"}:

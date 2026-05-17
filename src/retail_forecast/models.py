@@ -206,3 +206,114 @@ def combine_forecasts(*forecasts: pd.DataFrame) -> pd.DataFrame:
     merged["yhat"] = merged[pred_cols].mean(axis=1, skipna=True)
     merged = merged.sort_values("ds").reset_index(drop=True)
     return merged[["ds", "yhat"]]
+
+
+def forecast_single_group(
+    group_df: pd.DataFrame,
+    horizon: int = 30,
+    season_length: int = 7,
+    enable_prophet: bool = True,
+    enable_lstm: bool = True,
+):
+    """Forecast a single store/product time series.
+
+    Returns a dict with baseline/prophet/lstm/ensemble DataFrames.
+    Missing models are skipped gracefully.
+    """
+
+    group_df = group_df.sort_values("date").reset_index(drop=True)
+    if group_df.empty:
+        raise ValueError("Empty group series.")
+
+    store_id = group_df["store_id"].iloc[0]
+    item_id = group_df["item_id"].iloc[0]
+
+    forecasts: dict[str, pd.DataFrame] = {}
+
+    baseline = seasonal_naive_forecast(group_df, horizon=horizon, season_length=season_length)
+    baseline["store_id"] = store_id
+    baseline["item_id"] = item_id
+    forecasts["baseline"] = baseline
+
+    prophet_forecast = None
+    if enable_prophet and len(group_df) >= max(30, season_length * 4):
+        try:
+            _, prophet_forecast = try_train_prophet(group_df, horizon=horizon)
+            prophet_forecast["store_id"] = store_id
+            prophet_forecast["item_id"] = item_id
+            forecasts["prophet"] = prophet_forecast
+        except Exception:
+            prophet_forecast = None
+
+    lstm_forecast = None
+    if enable_lstm and len(group_df) >= 60:
+        try:
+            _, lstm_forecast = try_train_lstm(group_df, horizon=horizon)
+            lstm_forecast["store_id"] = store_id
+            lstm_forecast["item_id"] = item_id
+            forecasts["lstm"] = lstm_forecast
+        except Exception:
+            lstm_forecast = None
+
+    if prophet_forecast is not None and lstm_forecast is not None:
+        ensemble = combine_forecasts(prophet_forecast, lstm_forecast)
+        ensemble["store_id"] = store_id
+        ensemble["item_id"] = item_id
+        forecasts["ensemble"] = ensemble
+    elif prophet_forecast is not None:
+        forecasts["ensemble"] = prophet_forecast[["ds", "yhat", "store_id", "item_id"]].rename(
+            columns={"ds": "date", "yhat": "forecast"}
+        )
+    elif lstm_forecast is not None:
+        forecasts["ensemble"] = lstm_forecast[["ds", "yhat", "store_id", "item_id"]].rename(
+            columns={"ds": "date", "yhat": "forecast"}
+        )
+    else:
+        forecasts["ensemble"] = baseline.copy()
+
+    for name, frame in list(forecasts.items()):
+        if "ds" in frame.columns:
+            frame = frame.rename(columns={"ds": "date", "yhat": "forecast"})
+        frame["model_name"] = name
+        forecasts[name] = frame[["date", "forecast", "model_name", "store_id", "item_id"] + [c for c in frame.columns if c not in {"date", "forecast", "model_name", "store_id", "item_id"}]]
+
+    return forecasts
+
+
+def forecast_many_groups(
+    df: pd.DataFrame,
+    horizon: int = 30,
+    group_cols: tuple[str, str] = ("store_id", "item_id"),
+    max_groups: int | None = None,
+    enable_prophet: bool = True,
+    enable_lstm: bool = True,
+):
+    """Run forecasts for many store/product groups and combine by model name."""
+
+    groups = []
+    for keys, group in df.groupby(list(group_cols), sort=False):
+        if isinstance(keys, tuple):
+            store_id, item_id = keys
+        else:
+            store_id, item_id = keys, None
+        groups.append((store_id, item_id, group))
+
+    if max_groups is not None:
+        groups = sorted(groups, key=lambda item: float(item[2]["target"].sum()), reverse=True)[:max_groups]
+
+    frames: dict[str, list[pd.DataFrame]] = {"baseline": [], "prophet": [], "lstm": [], "ensemble": []}
+    for store_id, item_id, group in groups:
+        group_forecasts = forecast_single_group(
+            group,
+            horizon=horizon,
+            enable_prophet=enable_prophet,
+            enable_lstm=enable_lstm,
+        )
+        for name, frame in group_forecasts.items():
+            frames.setdefault(name, []).append(frame)
+
+    combined: dict[str, pd.DataFrame] = {}
+    for name, parts in frames.items():
+        if parts:
+            combined[name] = pd.concat(parts, ignore_index=True)
+    return combined

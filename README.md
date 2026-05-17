@@ -48,6 +48,10 @@ pip install -e ".[lstm]"
 retail-forecast train --data path/to/train.csv --dataset auto --output artifacts
 ```
 
+By default the pipeline forecasts the top groups first to keep local runs manageable.
+Use `--max-groups` to raise or lower the number of `store_id + item_id` series processed.
+For a larger run, set `--max-groups` to the number of groups you want to include.
+
 ## Forecast
 
 ```bash
