@@ -7,6 +7,19 @@ import pandas as pd
 from .inventory import inventory_recommendation
 
 
+def round_numeric_columns(frame: pd.DataFrame, columns: list[str] | None = None) -> pd.DataFrame:
+    rounded = frame.copy()
+    if columns is None:
+        columns = list(rounded.select_dtypes(include=["number"]).columns)
+    for column in columns:
+        if column not in rounded.columns:
+            continue
+        numeric = pd.to_numeric(rounded[column], errors="coerce")
+        if numeric.notna().any():
+            rounded[column] = numeric.round(0).astype("Int64")
+    return rounded
+
+
 def build_powerbi_tables(
     history: pd.DataFrame,
     forecast_tables: dict[str, pd.DataFrame],
@@ -30,6 +43,7 @@ def build_powerbi_tables(
     fact_history = history.copy()
     fact_history = fact_history.sort_values(["store_id", "item_id", "date"]).reset_index(drop=True)
     fact_history["table_type"] = "history"
+    fact_history = round_numeric_columns(fact_history)
     fact_history_path = output_dir / "fact_history.csv"
     fact_history.to_csv(fact_history_path, index=False)
 
@@ -42,13 +56,16 @@ def build_powerbi_tables(
         tmp["table_type"] = "forecast"
         if "yhat" in tmp.columns and "forecast" not in tmp.columns:
             tmp = tmp.rename(columns={"yhat": "forecast"})
+        tmp = round_numeric_columns(tmp)
         fact_forecasts.append(tmp)
     fact_forecast = pd.concat(fact_forecasts, ignore_index=True) if fact_forecasts else pd.DataFrame()
+    fact_forecast = round_numeric_columns(fact_forecast)
     fact_forecast_path = output_dir / "fact_forecast.csv"
     fact_forecast.to_csv(fact_forecast_path, index=False)
 
     product_cols = [c for c in ["item_id", "product_name", "category", "base_price", "base_demand"] if c in history.columns]
     dim_product = history[product_cols].drop_duplicates(subset=["item_id"]).sort_values("item_id")
+    dim_product = round_numeric_columns(dim_product)
     dim_product_path = output_dir / "dim_product.csv"
     dim_product.to_csv(dim_product_path, index=False)
 
@@ -76,6 +93,7 @@ def build_powerbi_tables(
                     store_meta = store.iloc[0].to_dict()
             inventory_rows.append({"store_id": store_id, "item_id": item_id, "source_model": model_name, **item_meta, **store_meta, **rec})
     inventory_df = pd.DataFrame(inventory_rows)
+    inventory_df = round_numeric_columns(inventory_df)
     inventory_path = output_dir / "inventory_recommendations.csv"
     inventory_df.to_csv(inventory_path, index=False)
 
@@ -92,6 +110,7 @@ def build_powerbi_tables(
             for name, frame in forecast_tables.items()
         ]
     )
+    metrics_df = round_numeric_columns(metrics_df)
     metrics_df.to_csv(metrics_path, index=False)
 
     return {

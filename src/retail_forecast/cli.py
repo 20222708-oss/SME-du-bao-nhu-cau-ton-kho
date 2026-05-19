@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .exporters import round_numeric_columns
 from .models import save_bundle
 from .pipeline import train_pipeline
 
@@ -70,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
                 forecast = candidate
                 break
         if forecast is not None:
+            forecast = round_numeric_columns(forecast)
             forecast.to_csv(output_dir / "forecast.csv", index=False)
         print(result.metrics)
         return 0
@@ -84,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
             enable_lstm=not args.no_lstm,
         )
         forecast = result.forecasts.get("ensemble", result.forecasts.get("baseline", pd.DataFrame()))
+        forecast = round_numeric_columns(forecast)
         forecast.to_csv(args.output, index=False)
         print(f"Saved forecast to {args.output}")
         return 0
