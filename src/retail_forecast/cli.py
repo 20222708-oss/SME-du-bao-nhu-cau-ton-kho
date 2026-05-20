@@ -8,6 +8,7 @@ import pandas as pd
 from .exporters import round_numeric_columns
 from .models import save_bundle
 from .pipeline import train_pipeline
+from .synthetic import generate_vn_retail_dataset
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,6 +41,15 @@ def build_parser() -> argparse.ArgumentParser:
     export_cmd.add_argument("--max-groups", type=int, default=25)
     export_cmd.add_argument("--no-prophet", action="store_true")
     export_cmd.add_argument("--no-lstm", action="store_true")
+
+    generate_cmd = sub.add_parser("generate-data", help="Generate a synthetic Vietnamese retail dataset")
+    generate_cmd.add_argument("--output-dir", default="synthetic_data/vn_retail")
+    generate_cmd.add_argument("--start-date", default="2020-01-01")
+    generate_cmd.add_argument("--end-date", default="2024-12-31")
+    generate_cmd.add_argument("--num-products", type=int, default=100)
+    generate_cmd.add_argument("--num-stores", type=int, default=6)
+    generate_cmd.add_argument("--num-suppliers", type=int, default=8)
+    generate_cmd.add_argument("--seed", type=int, default=42)
 
     return parser
 
@@ -102,6 +112,21 @@ def main(argv: list[str] | None = None) -> int:
             enable_lstm=not args.no_lstm,
         )
         print({k: len(v) for k, v in result.forecasts.items()})
+        return 0
+
+    if args.command == "generate-data":
+        output_dir = Path(args.output_dir)
+        paths = generate_vn_retail_dataset(
+            output_dir=output_dir,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            num_products=args.num_products,
+            num_stores=args.num_stores,
+            num_suppliers=args.num_suppliers,
+            seed=args.seed,
+        )
+        for key, path in paths.items():
+            print(f"{key}: {path}")
         return 0
 
     return 1
