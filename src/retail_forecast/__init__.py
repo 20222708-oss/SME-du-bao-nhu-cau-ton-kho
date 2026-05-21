@@ -7,5 +7,6 @@ __all__ = [
     "models",
     "pipeline",
     "synthetic",
+    "streamlit_app",
     "webapp",
 ]

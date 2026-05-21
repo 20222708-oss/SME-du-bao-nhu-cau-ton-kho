@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Retail Forecast Studio</title>
+    <meta
+      name="description"
+      content="Nền web dự báo nhu cầu và tối ưu tồn kho cho bán lẻ Việt Nam."
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="bg-orb bg-orb-a"></div>
+    <div class="bg-orb bg-orb-b"></div>
+    <div class="app-shell">
+      <aside class="sidebar panel">
+        <div class="brand">
+          <div class="brand-mark">RF</div>
+          <div>
+            <div class="brand-title">Retail Forecast Studio</div>
+            <div class="brand-subtitle">Dự báo nhu cầu • Tồn kho • Dashboard</div>
+          </div>
+        </div>
+
+        <div class="status-stack">
+          <span class="chip success">Python backend</span>
+          <span class="chip">JS / HTML / CSS</span>
+          <span class="chip accent">Ready for Power BI export</span>
+        </div>
+
+        <div class="filter-card">
+          <div class="filter-title">Bộ lọc</div>
+          <label>
+            <span>Cửa hàng</span>
+            <select id="storeFilter"></select>
+          </label>
+          <label>
+            <span>Sản phẩm</span>
+            <select id="productFilter"></select>
+          </label>
+          <label>
+            <span>Danh mục</span>
+            <select id="categoryFilter"></select>
+          </label>
+          <label>
+            <span>Mô hình</span>
+            <select id="modelFilter"></select>
+          </label>
+          <div class="inline-row">
+            <label>
+              <span>Horizon</span>
+              <input id="horizonInput" type="number" min="1" max="365" value="30" />
+            </label>
+            <label>
+              <span>Window</span>
+              <input id="windowInput" type="number" min="30" max="365" value="120" />
+            </label>
+          </div>
+          <div class="button-row">
+            <button id="refreshBtn" class="btn btn-primary">Cập nhật</button>
+            <button id="resetBtn" class="btn btn-ghost">Đặt lại</button>
+          </div>
+        </div>
+
+        <div class="snapshot-card">
+          <div class="snapshot-title">Trạng thái dữ liệu</div>
+          <div class="snapshot-metric" id="dataRootLabel">-</div>
+          <div class="snapshot-meta" id="artifactRootLabel">-</div>
+        </div>
+      </aside>
+
+      <main class="content">
+        <section class="hero panel">
+          <div class="hero-copy">
+            <p class="eyebrow">Vietnam retail intelligence</p>
+            <h1>Dự báo nhu cầu, tối ưu tồn kho, xem chi tiết theo sản phẩm và ngày</h1>
+            <p class="hero-text">
+              Nền dashboard này đọc trực tiếp dữ liệu bán lẻ và forecast đã train,
+              cho phép drill-down theo cửa hàng, SKU, danh mục và mô hình.
+            </p>
+          </div>
+          <div class="hero-side">
+            <div class="hero-kpi">
+              <div class="hero-kpi-label">Lần cập nhật</div>
+              <div class="hero-kpi-value" id="lastRefresh">-</div>
+            </div>
+            <div class="hero-kpi">
+              <div class="hero-kpi-label">Độ phủ mô hình</div>
+              <div class="hero-kpi-value" id="coverageValue">-</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="kpi-grid" id="kpiGrid"></section>
+
+        <section class="upper-grid">
+          <article class="panel chart-panel">
+            <div class="panel-head">
+              <div>
+                <h2>Thực tế vs dự báo</h2>
+                <p>Theo cửa hàng, sản phẩm, danh mục và mô hình đang chọn</p>
+              </div>
+              <div class="panel-badges">
+                <span class="chip">Actual</span>
+                <span class="chip accent">Forecast</span>
+              </div>
+            </div>
+            <div class="chart-wrap">
+              <svg id="trendChart" viewBox="0 0 1000 420" preserveAspectRatio="none"></svg>
+            </div>
+          </article>
+
+          <article class="panel insight-panel">
+            <div class="panel-head">
+              <div>
+                <h2>Danh mục bán mạnh</h2>
+                <p>So sánh doanh số theo category trong phạm vi đang lọc</p>
+              </div>
+            </div>
+            <div id="categoryBars" class="bar-list"></div>
+            <div class="metric-strip" id="metricStrip"></div>
+          </article>
+        </section>
+
+        <section class="lower-grid">
+          <article class="panel table-panel">
+            <div class="panel-head">
+              <div>
+                <h2>Khuyến nghị tồn kho</h2>
+                <p>Safety stock, reorder point và EOQ theo từng SKU / cửa hàng</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Cửa hàng</th>
+                    <th>Sản phẩm</th>
+                    <th>Danh mục</th>
+                    <th>Avg demand</th>
+                    <th>Safety stock</th>
+                    <th>Reorder point</th>
+                    <th>EOQ</th>
+                  </tr>
+                </thead>
+                <tbody id="inventoryBody"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel table-panel">
+            <div class="panel-head">
+              <div>
+                <h2>Top sản phẩm</h2>
+                <p>Xếp hạng theo lượng bán thực tế trong phạm vi hiện tại</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Sản phẩm</th>
+                    <th>Danh mục</th>
+                    <th>Thực tế</th>
+                    <th>Dự báo</th>
+                  </tr>
+                </thead>
+                <tbody id="topProductsBody"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="lower-grid">
+          <article class="panel metric-panel">
+            <div class="panel-head">
+              <div>
+                <h2>Chỉ số mô hình</h2>
+                <p>Độ phủ, số dòng và khoảng thời gian forecast</p>
+              </div>
+            </div>
+            <div id="metricsList" class="metrics-list"></div>
+          </article>
+
+          <article class="panel summary-panel">
+            <div class="panel-head">
+              <div>
+                <h2>Thông tin nhanh</h2>
+                <p>Điểm nhấn để đọc nhanh khi trình bày đồ án</p>
+              </div>
+            </div>
+            <div class="summary-stack" id="summaryStack"></div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay">
+      <div class="loading-card">
+        <div class="spinner"></div>
+        <div>
+          <strong>Đang nạp dữ liệu</strong>
+          <p>Chuẩn bị dashboard bán lẻ...</p>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

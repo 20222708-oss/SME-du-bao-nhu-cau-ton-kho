@@ -98,6 +98,13 @@ def build_parser() -> argparse.ArgumentParser:
     web_cmd.add_argument("--reload", action="store_true")
     web_cmd.add_argument("--title", default="Retail Forecast Studio")
 
+    ui_cmd = sub.add_parser("ui", help="Launch the Streamlit retail prediction app")
+    ui_cmd.add_argument("--data-root", default="D:/retail_artifacts")
+    ui_cmd.add_argument("--artifacts-root", default=None)
+    ui_cmd.add_argument("--host", default="0.0.0.0")
+    ui_cmd.add_argument("--port", type=int, default=8501)
+    ui_cmd.add_argument("--title", default="Retail Forecast Studio")
+
     return parser
 
 
@@ -191,6 +198,43 @@ def main(argv: list[str] | None = None) -> int:
             reload=args.reload,
             title=args.title,
         )
+        return 0
+
+    if args.command == "ui":
+        import subprocess
+        import sys
+
+        app_path = Path(__file__).with_name("streamlit_app.py")
+        cmd = [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            str(app_path),
+            "--server.address",
+            str(args.host),
+            "--server.port",
+            str(args.port),
+            "--browser.gatherUsageStats",
+            "false",
+            "--",
+            "--data-root",
+            args.data_root,
+            "--title",
+            args.title,
+        ]
+        if args.artifacts_root:
+            cmd.extend(["--artifacts-root", args.artifacts_root])
+        try:
+            import streamlit  # noqa: F401
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(
+                "Streamlit is not installed. Install UI dependencies with: pip install -e '.[ui]'"
+            ) from exc
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as exc:  # pragma: no cover
+            raise RuntimeError("Streamlit UI exited with an error. Check the console output above.") from exc
         return 0
 
     return 1
