@@ -16,6 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 prophet = ["prophet>=1.1"]
 lstm = ["tensorflow>=2.13"]
+web = ["fastapi>=0.110", "uvicorn>=0.27"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]

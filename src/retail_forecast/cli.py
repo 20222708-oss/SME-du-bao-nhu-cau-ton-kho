@@ -11,6 +11,45 @@ from .pipeline import train_pipeline
 from .synthetic import generate_vn_retail_dataset
 
 
+def _write_evaluation_metrics(output_dir: Path, metrics: dict[str, dict[str, float | int]]) -> Path:
+    rows: list[dict[str, object]] = []
+    regression = metrics.get("regression", {})
+    rows.append(
+        {
+            "section": "regression",
+            "model_name": "regression",
+            "mae": regression.get("mae"),
+            "rmse": regression.get("rmse"),
+            "mape": regression.get("mape"),
+            "bias": regression.get("bias"),
+            "mean_forecast": None,
+            "coverage_groups": None,
+        }
+    )
+
+    forecast_models = metrics.get("forecast_models", {})
+    coverage = metrics.get("coverage", {})
+    for name, mean_forecast in forecast_models.items():
+        rows.append(
+            {
+                "section": "forecast_models",
+                "model_name": name,
+                "mae": None,
+                "rmse": None,
+                "mape": None,
+                "bias": None,
+                "mean_forecast": mean_forecast,
+                "coverage_groups": coverage.get(name),
+            }
+        )
+
+    frame = pd.DataFrame(rows)
+    frame = round_numeric_columns(frame)
+    path = output_dir / "evaluation_metrics.csv"
+    frame.to_csv(path, index=False)
+    return path
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="retail-forecast")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -51,6 +90,14 @@ def build_parser() -> argparse.ArgumentParser:
     generate_cmd.add_argument("--num-suppliers", type=int, default=8)
     generate_cmd.add_argument("--seed", type=int, default=42)
 
+    web_cmd = sub.add_parser("web", help="Run the interactive prediction web app")
+    web_cmd.add_argument("--data-root", required=True)
+    web_cmd.add_argument("--artifacts-root", default=None)
+    web_cmd.add_argument("--host", default="127.0.0.1")
+    web_cmd.add_argument("--port", type=int, default=8501)
+    web_cmd.add_argument("--reload", action="store_true")
+    web_cmd.add_argument("--title", default="Retail Forecast Studio")
+
     return parser
 
 
@@ -74,6 +121,7 @@ def main(argv: list[str] | None = None) -> int:
         save_bundle(result.model, str(output_dir / "regression_bundle.joblib"))
         metrics_path = output_dir / "metrics.json"
         pd.Series(result.metrics).to_json(metrics_path)
+        _write_evaluation_metrics(output_dir, result.metrics)
         forecast = None
         for key in ("ensemble", "prophet", "lstm", "baseline"):
             candidate = result.forecasts.get(key)
@@ -111,6 +159,9 @@ def main(argv: list[str] | None = None) -> int:
             enable_prophet=not args.no_prophet,
             enable_lstm=not args.no_lstm,
         )
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        _write_evaluation_metrics(output_dir, result.metrics)
         print({k: len(v) for k, v in result.forecasts.items()})
         return 0
 
@@ -127,6 +178,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         for key, path in paths.items():
             print(f"{key}: {path}")
+        return 0
+
+    if args.command == "web":
+        from .webapp import run_web_server
+
+        run_web_server(
+            data_root=args.data_root,
+            artifacts_root=args.artifacts_root,
+            host=args.host,
+            port=args.port,
+            reload=args.reload,
+            title=args.title,
+        )
         return 0
 
     return 1

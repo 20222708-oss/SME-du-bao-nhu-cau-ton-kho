@@ -72,10 +72,12 @@ def train_regression_model(df: pd.DataFrame, kind: str = "ridge") -> tuple[Linea
     X_eval = X_test if len(X_test) else X_train
     y_eval = y_test if len(y_test) else y_train
     pred = model.predict(X_eval)
+    denom = pd.Series(y_eval).abs().clip(lower=1e-6).to_numpy()
     metrics = {
         "mae": float(np.mean(np.abs(y_eval - pred))),
         "rmse": float(np.sqrt(np.mean((y_eval - pred) ** 2))),
         "mape": mape(y_eval, pred),
+        "bias": float(np.mean((pred - y_eval) / denom) * 100),
     }
     return model, metrics
 
