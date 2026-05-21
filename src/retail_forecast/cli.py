@@ -76,6 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
     export_cmd = sub.add_parser("export", help="Export BI tables for Power BI/Tableau")
     export_cmd.add_argument("--data", required=True)
     export_cmd.add_argument("--dataset", default="auto")
+    export_cmd.add_argument("--horizon", type=int, default=30)
     export_cmd.add_argument("--output-dir", default="artifacts")
     export_cmd.add_argument("--max-groups", type=int, default=25)
     export_cmd.add_argument("--no-prophet", action="store_true")
@@ -104,6 +105,11 @@ def build_parser() -> argparse.ArgumentParser:
     ui_cmd.add_argument("--host", default="0.0.0.0")
     ui_cmd.add_argument("--port", type=int, default=8501)
     ui_cmd.add_argument("--title", default="Retail Forecast Studio")
+
+    desktop_cmd = sub.add_parser("desktop", help="Launch the native desktop retail prediction app")
+    desktop_cmd.add_argument("--data-root", default="D:/retail_artifacts")
+    desktop_cmd.add_argument("--artifacts-root", default=None)
+    desktop_cmd.add_argument("--title", default="Retail Forecast Studio")
 
     return parser
 
@@ -160,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
         result = train_pipeline(
             args.data,
             profile=args.dataset,
-            horizon=30,
+            horizon=args.horizon,
             output_dir=args.output_dir,
             forecast_group_limit=args.max_groups,
             enable_prophet=not args.no_prophet,
@@ -235,6 +241,16 @@ def main(argv: list[str] | None = None) -> int:
             subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as exc:  # pragma: no cover
             raise RuntimeError("Streamlit UI exited with an error. Check the console output above.") from exc
+        return 0
+
+    if args.command == "desktop":
+        from .desktop_app import run_desktop_app
+
+        run_desktop_app(
+            data_root=args.data_root,
+            artifacts_root=args.artifacts_root,
+            title=args.title,
+        )
         return 0
 
     return 1

@@ -17,8 +17,10 @@ except Exception:  # pragma: no cover
 def mape(y_true, y_pred) -> float:
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
-    denom = np.clip(np.abs(y_true), 1e-6, None)
-    return float(np.mean(np.abs((y_true - y_pred) / denom)) * 100)
+    mask = np.abs(y_true) > 1e-6
+    if not np.any(mask):
+        return 0.0
+    return float(np.mean(np.abs((y_true[mask] - y_pred[mask]) / np.abs(y_true[mask]))) * 100)
 
 
 @dataclass
@@ -72,12 +74,13 @@ def train_regression_model(df: pd.DataFrame, kind: str = "ridge") -> tuple[Linea
     X_eval = X_test if len(X_test) else X_train
     y_eval = y_test if len(y_test) else y_train
     pred = model.predict(X_eval)
-    denom = pd.Series(y_eval).abs().clip(lower=1e-6).to_numpy()
+    nonzero = np.abs(y_eval) > 1e-6
+    bias = float(np.mean((pred[nonzero] - y_eval[nonzero]) / np.abs(y_eval[nonzero])) * 100) if np.any(nonzero) else 0.0
     metrics = {
         "mae": float(np.mean(np.abs(y_eval - pred))),
         "rmse": float(np.sqrt(np.mean((y_eval - pred) ** 2))),
         "mape": mape(y_eval, pred),
-        "bias": float(np.mean((pred - y_eval) / denom) * 100),
+        "bias": bias,
     }
     return model, metrics
 

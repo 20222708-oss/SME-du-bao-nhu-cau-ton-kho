@@ -39,8 +39,8 @@ def _evaluate_forecast(actual: pd.Series, pred: pd.Series) -> dict[str, float]:
         return {"mae": 0.0, "rmse": 0.0, "mape": 0.0}
     mae = float(abs(actual - pred).mean())
     rmse = float(((actual - pred) ** 2).mean() ** 0.5)
-    denom = pd.Series(actual).abs().clip(lower=1e-6).to_numpy()
-    mape = float((abs(actual - pred) / denom).mean() * 100)
+    nonzero = abs(actual) > 1e-6
+    mape = float((abs(actual[nonzero] - pred[nonzero]) / abs(actual[nonzero])).mean() * 100) if nonzero.any() else 0.0
     return {"mae": mae, "rmse": rmse, "mape": mape}
 
 

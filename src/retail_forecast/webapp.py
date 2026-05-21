@@ -78,6 +78,7 @@ def _filter_frame(
     item_id: str | None = None,
     category: str | None = None,
     model_name: str | None = None,
+    holiday_name: str | None = None,
 ) -> pd.DataFrame:
     if frame is None or frame.empty:
         return pd.DataFrame()
@@ -90,6 +91,29 @@ def _filter_frame(
         out = out[out["category"].astype(str) == str(category)]
     if model_name and model_name != "all" and "model_name" in out.columns:
         out = out[out["model_name"].astype(str) == str(model_name)]
+    if holiday_name and holiday_name != "all":
+        holiday_key = str(holiday_name).strip().lower()
+        if holiday_key in {"ngày thường", "ngay thuong", "regular"}:
+            if "is_holiday" in out.columns:
+                out = out[~out["is_holiday"].fillna(False).astype(bool)]
+            elif "holiday_name" in out.columns:
+                out = out[out["holiday_name"].isna() | (out["holiday_name"].astype(str).str.strip() == "")]
+        elif holiday_key in {"ngày lễ", "ngay le", "holiday"}:
+            if "is_holiday" in out.columns:
+                out = out[out["is_holiday"].fillna(False).astype(bool)]
+        elif holiday_key in {"tết", "tet"}:
+            if "is_tet" in out.columns:
+                out = out[out["is_tet"].fillna(False).astype(bool)]
+            elif "holiday_name" in out.columns:
+                out = out[out["holiday_name"].astype(str).str.contains("Tết", case=False, na=False)]
+        elif holiday_key in {"trước lễ", "truoc le", "trước lễ/tết", "truoc le/tet", "before_holiday"}:
+            if "is_before_holiday" in out.columns:
+                out = out[out["is_before_holiday"].fillna(False).astype(bool)]
+        elif holiday_key in {"sau lễ", "sau lễ/tết", "sau le", "sau le/tet", "after_holiday"}:
+            if "is_after_holiday" in out.columns:
+                out = out[out["is_after_holiday"].fillna(False).astype(bool)]
+        elif "holiday_name" in out.columns:
+            out = out[out["holiday_name"].astype(str) == str(holiday_name)]
     return out.reset_index(drop=True)
 
 
@@ -131,6 +155,40 @@ def _ensure_store_columns(frame: pd.DataFrame, stores: pd.DataFrame) -> pd.DataF
     return out
 
 
+def _ensure_calendar_columns(frame: pd.DataFrame, calendar: pd.DataFrame) -> pd.DataFrame:
+    if frame is None or frame.empty:
+        return pd.DataFrame()
+    out = frame.copy()
+    if calendar is None or calendar.empty or "date" not in out.columns or "date" not in calendar.columns:
+        return out
+    dim = calendar.copy()
+    if "date" not in dim.columns:
+        return out
+    wanted = [
+        column
+        for column in [
+            "day_of_week",
+            "week_of_year",
+            "month",
+            "month_name",
+            "quarter",
+            "year",
+            "is_weekend",
+            "is_holiday",
+            "holiday_name",
+            "is_tet",
+            "is_before_holiday",
+            "is_after_holiday",
+            "lunar_date",
+            "season",
+        ]
+        if column in dim.columns
+    ]
+    if not wanted:
+        return out
+    return out.merge(dim[["date", *wanted]].drop_duplicates("date"), on="date", how="left")
+
+
 @dataclass
 class DashboardRepository:
     data_root: Path
@@ -152,6 +210,7 @@ class DashboardRepository:
                 if not frame.empty:
                     frame = _ensure_category_columns(frame, self.products)
                     frame = _ensure_store_columns(frame, self.stores)
+                    frame = _ensure_calendar_columns(frame, self.calendar)
                     if "date" in frame.columns:
                         frame = frame.sort_values("date").reset_index(drop=True)
                     return frame
@@ -177,6 +236,7 @@ class DashboardRepository:
             frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
         frame = _ensure_category_columns(frame, self.products)
         frame = _ensure_store_columns(frame, self.stores)
+        frame = _ensure_calendar_columns(frame, self.calendar)
         frame = frame.dropna(subset=["date"]) if "date" in frame.columns else frame
         if "model_name" not in frame.columns:
             frame["model_name"] = "baseline"
@@ -199,6 +259,19 @@ class DashboardRepository:
         return frame
 
     @cached_property
+    def calendar(self) -> pd.DataFrame:
+        file_path = _first_existing(
+            self.roots
+            + [
+                ROOT_DIR / "synthetic_data" / "vn_retail_100sku_3y",
+            ],
+            ["dim_calendar.csv", "calendar.csv"],
+        )
+        if file_path is None:
+            return pd.DataFrame()
+        return _read_csv(file_path)
+
+    @cached_property
     def inventory(self) -> pd.DataFrame:
         file_path = _first_existing(self.roots, ["inventory_recommendations.csv"])
         if file_path is None:
@@ -206,6 +279,7 @@ class DashboardRepository:
         frame = _read_csv(file_path)
         frame = _ensure_category_columns(frame, self.products)
         frame = _ensure_store_columns(frame, self.stores)
+        frame = _ensure_calendar_columns(frame, self.calendar)
         return frame
 
     @cached_property
@@ -259,6 +333,34 @@ class DashboardRepository:
         elif "category" in history.columns:
             categories = sorted(history["category"].dropna().astype(str).unique().tolist())
 
+        holidays: list[dict[str, str]] = [
+            {"value": "all", "label": "Tất cả"},
+            {"value": "regular", "label": "Ngày thường"},
+            {"value": "holiday", "label": "Ngày lễ"},
+            {"value": "tet", "label": "Tết"},
+            {"value": "before_holiday", "label": "Trước lễ/Tết"},
+            {"value": "after_holiday", "label": "Sau lễ/Tết"},
+        ]
+        holiday_values: list[str] = []
+        if "holiday_name" in history.columns:
+            holiday_values = sorted(
+                {
+                    value
+                    for value in history["holiday_name"].dropna().astype(str).tolist()
+                    if value and value.lower() not in {"nan", "none", "-"}
+                }
+            )
+        elif "holiday_name" in self.calendar.columns:
+            holiday_values = sorted(
+                {
+                    value
+                    for value in self.calendar["holiday_name"].dropna().astype(str).tolist()
+                    if value and value.lower() not in {"nan", "none", "-"}
+                }
+            )
+        for value in holiday_values:
+            holidays.append({"value": value, "label": value})
+
         models = []
         if not self.forecast.empty and "model_name" in self.forecast.columns:
             models = sorted(self.forecast["model_name"].dropna().astype(str).unique().tolist())
@@ -269,6 +371,7 @@ class DashboardRepository:
             "stores": store_options,
             "products": product_options,
             "categories": [{"value": value, "label": value} for value in categories],
+            "holidays": holidays,
             "models": [{"value": value, "label": value.capitalize()} for value in models],
         }
 
@@ -278,6 +381,7 @@ class DashboardRepository:
         store_id: str | None,
         item_id: str | None,
         category: str | None,
+        holiday_name: str | None,
         model_name: str,
         horizon: int,
     ) -> pd.DataFrame:
@@ -286,6 +390,7 @@ class DashboardRepository:
             store_id=store_id,
             item_id=item_id,
             category=category,
+            holiday_name=holiday_name,
             model_name=model_name,
         )
         if not selected.empty and "forecast" in selected.columns:
@@ -296,7 +401,7 @@ class DashboardRepository:
             if not selected.empty:
                 return selected.groupby("date", as_index=False)["forecast"].sum().sort_values("date").reset_index(drop=True)
 
-        scope_history = _filter_frame(self.history, store_id=store_id, item_id=item_id, category=category)
+        scope_history = _filter_frame(self.history, store_id=store_id, item_id=item_id, category=category, holiday_name=holiday_name)
         if scope_history.empty:
             return pd.DataFrame(columns=["date", "forecast"])
         naive = seasonal_naive_forecast(scope_history[["date", "target"]].copy(), horizon=horizon)
@@ -310,11 +415,25 @@ class DashboardRepository:
         store_id: str | None,
         item_id: str | None,
         category: str | None,
+        holiday_name: str | None,
         model_name: str,
         horizon: int,
         history_window: int,
     ) -> dict[str, list[dict[str, Any]]]:
-        history = _filter_frame(self.history, store_id=store_id, item_id=item_id, category=category)
+        history = _filter_frame(self.history, store_id=store_id, item_id=item_id, category=category, holiday_name=holiday_name)
+        forecast_scope = _filter_frame(
+            self.forecast,
+            store_id=store_id,
+            item_id=item_id,
+            category=category,
+            holiday_name=holiday_name,
+            model_name=model_name,
+        )
+        if not history.empty and not forecast_scope.empty and {"store_id", "item_id"}.issubset(history.columns) and {"store_id", "item_id"}.issubset(forecast_scope.columns):
+            forecast_pairs = forecast_scope[["store_id", "item_id"]].drop_duplicates()
+            history_pairs = history[["store_id", "item_id"]].drop_duplicates()
+            if 0 < len(forecast_pairs) < len(history_pairs):
+                history = history.merge(forecast_pairs, on=["store_id", "item_id"], how="inner")
         actual = (
             history.groupby("date", as_index=False)["target"]
             .sum()
@@ -327,6 +446,7 @@ class DashboardRepository:
             store_id=store_id,
             item_id=item_id,
             category=category,
+            holiday_name=holiday_name,
             model_name=model_name,
             horizon=horizon,
         )
@@ -342,8 +462,9 @@ class DashboardRepository:
         store_id: str | None,
         item_id: str | None,
         category: str | None,
+        holiday_name: str | None,
     ) -> list[dict[str, Any]]:
-        history = _filter_frame(self.history, store_id=store_id, item_id=item_id, category=category)
+        history = _filter_frame(self.history, store_id=store_id, item_id=item_id, category=category, holiday_name=holiday_name)
         if history.empty or "category" not in history.columns:
             return []
         grouped = (
@@ -364,15 +485,16 @@ class DashboardRepository:
         store_id: str | None,
         item_id: str | None,
         category: str | None,
+        holiday_name: str | None,
         model_name: str,
     ) -> list[dict[str, Any]]:
-        history = _filter_frame(self.history, store_id=store_id, item_id=item_id, category=category)
+        history = _filter_frame(self.history, store_id=store_id, item_id=item_id, category=category, holiday_name=holiday_name)
         if history.empty:
             return []
         cols = [c for c in ["item_id", "product_name", "category"] if c in history.columns]
         grouped = history.groupby(cols, as_index=False)["target"].sum().rename(columns={"target": "actual_units"})
 
-        forecast = _filter_frame(self.forecast, store_id=store_id, item_id=item_id, category=category, model_name=model_name)
+        forecast = _filter_frame(self.forecast, store_id=store_id, item_id=item_id, category=category, holiday_name=holiday_name, model_name=model_name)
         if not forecast.empty and "forecast" in forecast.columns:
             fcols = [c for c in ["item_id", "product_name", "category"] if c in forecast.columns]
             forecast_grouped = (
@@ -395,10 +517,11 @@ class DashboardRepository:
         store_id: str | None,
         item_id: str | None,
         category: str | None,
+        holiday_name: str | None,
         model_name: str,
         limit: int,
     ) -> list[dict[str, Any]]:
-        inventory = _filter_frame(self.inventory, store_id=store_id, item_id=item_id, category=category)
+        inventory = _filter_frame(self.inventory, store_id=store_id, item_id=item_id, category=category, holiday_name=holiday_name)
         if inventory.empty:
             return []
         if "source_model" in inventory.columns and model_name and model_name != "all":
@@ -438,18 +561,20 @@ class DashboardRepository:
         store_id: str | None,
         item_id: str | None,
         category: str | None,
+        holiday_name: str | None,
         model_name: str,
         horizon: int,
     ) -> dict[str, Any]:
-        history = _filter_frame(self.history, store_id=store_id, item_id=item_id, category=category)
+        history = _filter_frame(self.history, store_id=store_id, item_id=item_id, category=category, holiday_name=holiday_name)
         forecast = self._forecast_for_scope(
             store_id=store_id,
             item_id=item_id,
             category=category,
+            holiday_name=holiday_name,
             model_name=model_name,
             horizon=horizon,
         )
-        inventory = _filter_frame(self.inventory, store_id=store_id, item_id=item_id, category=category)
+        inventory = _filter_frame(self.inventory, store_id=store_id, item_id=item_id, category=category, holiday_name=holiday_name)
 
         total_units = float(history["target"].sum()) if "target" in history.columns and not history.empty else 0.0
         total_revenue = float(history["revenue"].sum()) if "revenue" in history.columns and not history.empty else 0.0
@@ -502,6 +627,7 @@ class DashboardRepository:
         store_id: str | None,
         item_id: str | None,
         category: str | None,
+        holiday_name: str | None,
         model_name: str,
         horizon: int = 30,
         history_window: int = 120,
@@ -512,6 +638,7 @@ class DashboardRepository:
                 store_id=store_id,
                 item_id=item_id,
                 category=category,
+                holiday_name=holiday_name,
                 model_name=model_name,
                 horizon=horizon,
             ),
@@ -519,21 +646,24 @@ class DashboardRepository:
                 store_id=store_id,
                 item_id=item_id,
                 category=category,
+                holiday_name=holiday_name,
                 model_name=model_name,
                 horizon=horizon,
                 history_window=history_window,
             ),
-            "categories": self.categories(store_id=store_id, item_id=item_id, category=category),
+            "categories": self.categories(store_id=store_id, item_id=item_id, category=category, holiday_name=holiday_name),
             "top_products": self.top_products(
                 store_id=store_id,
                 item_id=item_id,
                 category=category,
+                holiday_name=holiday_name,
                 model_name=model_name,
             ),
             "inventory": self.inventory_table(
                 store_id=store_id,
                 item_id=item_id,
                 category=category,
+                holiday_name=holiday_name,
                 model_name=model_name,
                 limit=inventory_limit,
             ),
@@ -542,6 +672,7 @@ class DashboardRepository:
                 "store_id": store_id or "all",
                 "item_id": item_id or "all",
                 "category": category or "all",
+                "holiday_name": holiday_name or "all",
                 "model_name": model_name,
                 "horizon": horizon,
                 "history_window": history_window,
@@ -565,6 +696,7 @@ class DashboardRepository:
                 store_id=store_id,
                 item_id=item_id,
                 category=category,
+                holiday_name=None,
                 model_name=model_name,
                 horizon=horizon,
                 history_window=history_window,
@@ -607,6 +739,7 @@ def create_app(
         store_id: str = Query("all"),
         item_id: str = Query("all"),
         category: str = Query("all"),
+        holiday_name: str = Query("all"),
         model_name: str = Query("ensemble"),
         horizon: int = Query(30, ge=1, le=365),
         history_window: int = Query(120, ge=30, le=365),
@@ -616,6 +749,7 @@ def create_app(
             store_id=None if store_id == "all" else store_id,
             item_id=None if item_id == "all" else item_id,
             category=None if category == "all" else category,
+            holiday_name=None if holiday_name == "all" else holiday_name,
             model_name=model_name,
             horizon=horizon,
             history_window=history_window,
@@ -627,6 +761,7 @@ def create_app(
         store_id: str = Query("all"),
         item_id: str = Query("all"),
         category: str = Query("all"),
+        holiday_name: str = Query("all"),
         model_name: str = Query("ensemble"),
         horizon: int = Query(30, ge=1, le=365),
         history_window: int = Query(120, ge=30, le=365),
@@ -636,6 +771,7 @@ def create_app(
             store_id=None if store_id == "all" else store_id,
             item_id=None if item_id == "all" else item_id,
             category=None if category == "all" else category,
+            holiday_name=None if holiday_name == "all" else holiday_name,
             model_name=model_name,
             horizon=horizon,
             history_window=history_window,
