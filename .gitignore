@@ -6,3 +6,25 @@ artifacts/
 .mypy_cache/
 dist/
 build/
+
+# Local generated datasets and report artifacts
+synthetic_data/
+report_output/
+scripts/
+
+# Graduation report drafts are kept locally to avoid pushing large/private files.
+*.docx
+~$*.docx
+
+# Local notebooks / temporary exports
+*.ipynb_checkpoints/
+*.joblib
+*.pkl
+*.sqlite
+*.db
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from .datasets import aggregate_series, infer_frequency, load_dataset
+from .evaluation import build_model_evaluation_tables
 from .exporters import build_powerbi_tables
 from .inventory import inventory_recommendation
 from .models import (
@@ -26,6 +27,8 @@ class PipelineResult:
     metrics: dict[str, dict[str, float | int]]
     forecasts: dict[str, pd.DataFrame]
     inventory: dict[str, float] | None
+    evaluation_detail: pd.DataFrame | None = None
+    evaluation_summary: pd.DataFrame | None = None
 
 
 def load_and_prepare(source: str | Path, profile: str | None = None) -> pd.DataFrame:
@@ -71,6 +74,14 @@ def train_pipeline(
         enable_lstm=enable_lstm,
     )
 
+    evaluation_detail, evaluation_summary = build_model_evaluation_tables(
+        history,
+        horizon=horizon,
+        max_groups=forecast_group_limit,
+        enable_prophet=enable_prophet,
+        enable_lstm=enable_lstm,
+    )
+
     history_tail = history.tail(min(len(history), 30))
     inventory = inventory_recommendation(history_tail["target"])
 
@@ -88,6 +99,19 @@ def train_pipeline(
         name: int(frame[["store_id", "item_id"]].drop_duplicates().shape[0]) if not frame.empty else 0
         for name, frame in forecasts.items()
     }
+    if evaluation_summary is not None and not evaluation_summary.empty:
+        metrics["evaluation"] = {
+            str(row["model_name"]): {
+                "mae": float(row["mae"]),
+                "rmse": float(row["rmse"]),
+                "mape": float(row["mape"]) if pd.notna(row["mape"]) else 0.0,
+                "smape": float(row["smape"]) if pd.notna(row["smape"]) else 0.0,
+                "bias": float(row["bias"]) if pd.notna(row["bias"]) else 0.0,
+                "rows": int(row["rows"]),
+                "groups": int(row["groups"]),
+            }
+            for _, row in evaluation_summary.iterrows()
+        }
 
     return PipelineResult(
         raw=history,
@@ -95,6 +119,8 @@ def train_pipeline(
         metrics=metrics,
         forecasts=forecasts,
         inventory=inventory,
+        evaluation_detail=evaluation_detail,
+        evaluation_summary=evaluation_summary,
     )
 
 

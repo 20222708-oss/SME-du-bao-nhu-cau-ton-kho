@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .evaluation import generate_evaluation_charts, write_evaluation_outputs
 from .exporters import round_numeric_columns
 from .models import save_bundle
 from .pipeline import train_pipeline
@@ -29,25 +30,42 @@ def _write_evaluation_metrics(output_dir: Path, metrics: dict[str, dict[str, flo
 
     forecast_models = metrics.get("forecast_models", {})
     coverage = metrics.get("coverage", {})
+    evaluation = metrics.get("evaluation", {})
     for name, mean_forecast in forecast_models.items():
+        model_eval = evaluation.get(name, {}) if isinstance(evaluation, dict) else {}
         rows.append(
             {
                 "section": "forecast_models",
                 "model_name": name,
-                "mae": None,
-                "rmse": None,
-                "mape": None,
-                "bias": None,
+                "mae": model_eval.get("mae"),
+                "rmse": model_eval.get("rmse"),
+                "mape": model_eval.get("mape"),
+                "smape": model_eval.get("smape"),
+                "bias": model_eval.get("bias"),
                 "mean_forecast": mean_forecast,
                 "coverage_groups": coverage.get(name),
             }
         )
 
     frame = pd.DataFrame(rows)
-    frame = round_numeric_columns(frame)
     path = output_dir / "evaluation_metrics.csv"
     frame.to_csv(path, index=False)
     return path
+
+
+def _write_model_evaluation_artifacts(result, output_dir: Path, no_charts: bool = False) -> None:
+    if result.evaluation_detail is None or result.evaluation_summary is None:
+        return
+
+    write_evaluation_outputs(result.evaluation_detail, result.evaluation_summary, output_dir)
+    if no_charts:
+        return
+
+    charts = generate_evaluation_charts(result.evaluation_detail, result.evaluation_summary, output_dir)
+    if charts:
+        print(f"Saved {len(charts)} evaluation charts to {output_dir / 'charts'}")
+    else:
+        print("Skipped evaluation charts because matplotlib is not available or evaluation data is empty.")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -63,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--max-groups", type=int, default=25)
     train.add_argument("--no-prophet", action="store_true")
     train.add_argument("--no-lstm", action="store_true")
+    train.add_argument("--no-charts", action="store_true", help="Do not generate PNG evaluation charts")
 
     forecast = sub.add_parser("forecast", help="Generate forecast")
     forecast.add_argument("--data", required=True)
@@ -81,6 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
     export_cmd.add_argument("--max-groups", type=int, default=25)
     export_cmd.add_argument("--no-prophet", action="store_true")
     export_cmd.add_argument("--no-lstm", action="store_true")
+    export_cmd.add_argument("--no-charts", action="store_true", help="Do not generate PNG evaluation charts")
 
     generate_cmd = sub.add_parser("generate-data", help="Generate a synthetic Vietnamese retail dataset")
     generate_cmd.add_argument("--output-dir", default="synthetic_data/vn_retail")
@@ -135,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
         metrics_path = output_dir / "metrics.json"
         pd.Series(result.metrics).to_json(metrics_path)
         _write_evaluation_metrics(output_dir, result.metrics)
+        _write_model_evaluation_artifacts(result, output_dir, no_charts=args.no_charts)
         forecast = None
         for key in ("ensemble", "prophet", "lstm", "baseline"):
             candidate = result.forecasts.get(key)
@@ -175,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
         output_dir = Path(args.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         _write_evaluation_metrics(output_dir, result.metrics)
+        _write_model_evaluation_artifacts(result, output_dir, no_charts=args.no_charts)
         print({k: len(v) for k, v in result.forecasts.items()})
         return 0
 
