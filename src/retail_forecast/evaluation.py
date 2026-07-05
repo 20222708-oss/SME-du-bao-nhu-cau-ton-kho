@@ -139,6 +139,154 @@ def build_model_evaluation_tables(
     return detail, summary
 
 
+def build_model_performance_orientation(summary: pd.DataFrame) -> pd.DataFrame:
+    """Create a business-friendly comparison table for forecast models.
+
+    The regular summary table is numeric. This table adds interpretation fields
+    so the Power BI model page and graduation slides can explain when each model
+    should be used, not only which model has the lowest error.
+    """
+
+    profiles = {
+        "baseline": {
+            "ten_hien_thi": "Baseline",
+            "vai_tro": "Moc so sanh ban dau",
+            "toc_do_huan_luyen": "Rat nhanh",
+            "kha_nang_giai_thich": "Cao",
+            "phu_hop_mua_vu": "Thap",
+            "dinh_huong_su_dung": "Dung lam moc nen de biet cac mo hinh khac co cai thien hay khong.",
+            "han_che": "Kho bat duoc mua vu, ngay le va bien dong phuc tap.",
+        },
+        "regression": {
+            "ten_hien_thi": "Regression",
+            "vai_tro": "Mo hinh hoc may nen",
+            "toc_do_huan_luyen": "Nhanh",
+            "kha_nang_giai_thich": "Cao",
+            "phu_hop_mua_vu": "Trung binh",
+            "dinh_huong_su_dung": "Phu hop khi can ket qua nhanh, de giai thich va lam baseline.",
+            "han_che": "Can dac trung thoi gian tot, kho hoc quan he chuoi dai han.",
+        },
+        "prophet": {
+            "ten_hien_thi": "Prophet",
+            "vai_tro": "Du bao chuoi thoi gian",
+            "toc_do_huan_luyen": "Trung binh",
+            "kha_nang_giai_thich": "Kha cao",
+            "phu_hop_mua_vu": "Cao",
+            "dinh_huong_su_dung": "Phu hop du lieu co xu huong, mua vu, ngay le va Tet.",
+            "han_che": "Can chuoi thoi gian tuong doi on dinh, co the kem linh hoat voi bien dong bat thuong.",
+        },
+        "lstm": {
+            "ten_hien_thi": "LSTM",
+            "vai_tro": "Hoc sau cho chuoi thoi gian",
+            "toc_do_huan_luyen": "Cham",
+            "kha_nang_giai_thich": "Thap",
+            "phu_hop_mua_vu": "Kha cao",
+            "dinh_huong_su_dung": "Phu hop khi du lieu dai, nhieu mau bien dong va can hoc quan he phuc tap.",
+            "han_che": "Ton thoi gian train, kho giai thich va can nhieu du lieu.",
+        },
+        "ensemble": {
+            "ten_hien_thi": "Ensemble",
+            "vai_tro": "Ket hop nhieu mo hinh",
+            "toc_do_huan_luyen": "Phu thuoc mo hinh thanh phan",
+            "kha_nang_giai_thich": "Trung binh",
+            "phu_hop_mua_vu": "Cao",
+            "dinh_huong_su_dung": "Phu hop khi can ket qua on dinh va giam rui ro phu thuoc mot mo hinh.",
+            "han_che": "Kho giai thich hon mo hinh don le.",
+        },
+    }
+
+    if summary.empty:
+        return pd.DataFrame(
+            columns=[
+                "model_name",
+                "ten_hien_thi",
+                "rank",
+                "mae",
+                "rmse",
+                "mape",
+                "smape",
+                "bias",
+                "muc_hieu_nang",
+                "xu_huong_du_bao",
+                "vai_tro",
+                "toc_do_huan_luyen",
+                "kha_nang_giai_thich",
+                "phu_hop_mua_vu",
+                "dinh_huong_su_dung",
+                "han_che",
+                "ket_luan",
+            ]
+        )
+
+    rows: list[dict[str, object]] = []
+    for _, row in summary.iterrows():
+        model_name = str(row.get("model_name", "")).lower()
+        profile = profiles.get(
+            model_name,
+            {
+                "ten_hien_thi": str(row.get("model_name", "")),
+                "vai_tro": "Mo hinh du bao",
+                "toc_do_huan_luyen": "Chua danh gia",
+                "kha_nang_giai_thich": "Chua danh gia",
+                "phu_hop_mua_vu": "Chua danh gia",
+                "dinh_huong_su_dung": "Can xem them chi so thuc nghiem truoc khi lua chon.",
+                "han_che": "Can danh gia them tren du lieu thuc te.",
+            },
+        )
+        smape = float(row["smape"]) if pd.notna(row.get("smape")) else np.nan
+        bias = float(row["bias"]) if pd.notna(row.get("bias")) else np.nan
+
+        if pd.isna(smape):
+            performance_level = "Chua du du lieu"
+        elif smape <= 15:
+            performance_level = "Tot"
+        elif smape <= 30:
+            performance_level = "Kha"
+        elif smape <= 50:
+            performance_level = "Trung binh"
+        else:
+            performance_level = "Can cai thien"
+
+        if pd.isna(bias) or abs(bias) < 1:
+            bias_direction = "Can bang"
+        elif bias > 0:
+            bias_direction = "Du bao cao hon thuc te"
+        else:
+            bias_direction = "Du bao thap hon thuc te"
+
+        rank = int(row["rank"]) if pd.notna(row.get("rank")) else None
+        if rank == 1:
+            conclusion = "Nen uu tien theo ket qua thuc nghiem hien tai."
+        elif model_name in {"baseline", "regression"}:
+            conclusion = "Nen dung de doi chieu va giai thich muc cai thien."
+        else:
+            conclusion = "Co the dung khi phu hop boi canh du lieu va yeu cau nghiep vu."
+
+        rows.append(
+            {
+                "model_name": row.get("model_name"),
+                "ten_hien_thi": profile["ten_hien_thi"],
+                "rank": row.get("rank"),
+                "mae": row.get("mae"),
+                "rmse": row.get("rmse"),
+                "mape": row.get("mape"),
+                "smape": row.get("smape"),
+                "bias": row.get("bias"),
+                "muc_hieu_nang": performance_level,
+                "xu_huong_du_bao": bias_direction,
+                "vai_tro": profile["vai_tro"],
+                "toc_do_huan_luyen": profile["toc_do_huan_luyen"],
+                "kha_nang_giai_thich": profile["kha_nang_giai_thich"],
+                "phu_hop_mua_vu": profile["phu_hop_mua_vu"],
+                "dinh_huong_su_dung": profile["dinh_huong_su_dung"],
+                "han_che": profile["han_che"],
+                "ket_luan": conclusion,
+            }
+        )
+
+    return pd.DataFrame(rows).sort_values(["rank", "model_name"], na_position="last").reset_index(drop=True)
+
+
 def write_evaluation_outputs(
     detail: pd.DataFrame,
     summary: pd.DataFrame,
@@ -154,6 +302,11 @@ def write_evaluation_outputs(
     summary.to_csv(summary_path, index=False)
     paths["model_evaluation_detail"] = detail_path
     paths["model_evaluation_summary"] = summary_path
+
+    orientation = build_model_performance_orientation(summary)
+    orientation_path = output / "model_performance_orientation.csv"
+    orientation.to_csv(orientation_path, index=False)
+    paths["model_performance_orientation"] = orientation_path
 
     if not detail.empty:
         if "category" in detail.columns:
